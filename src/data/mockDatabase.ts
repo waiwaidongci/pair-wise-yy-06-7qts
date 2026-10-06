@@ -126,6 +126,34 @@ export const DATABASE: DatabaseSchema = {
   ],
 };
 
+/** 旧版本浏览器数据升级时统一补齐的基准数据版本 */
+export const BASELINE_DATA_VERSION = 1;
+
+let dataVersion = BASELINE_DATA_VERSION;
+
+export function getDataVersion(): number {
+  return dataVersion;
+}
+
+/**
+ * 模拟源库发生一次数据变更：版本号 +1，并按版本号确定性地改写部分订单，
+ * 使同一查询在新版本下得到不同结果。
+ */
+export function advanceDataVersion(): number {
+  dataVersion += 1;
+  const seed = dataVersion * 997;
+  orders.forEach((row, index) => {
+    if ((index + seed) % 23 === 0) {
+      row.amount = Math.round((Number(row.amount) * 1.05 + 37) * 100) / 100;
+    }
+    if ((index + seed) % 29 === 0) {
+      const current = STATUSES.indexOf(String(row.status));
+      row.status = STATUSES[(current + 1) % STATUSES.length];
+    }
+  });
+  return dataVersion;
+}
+
 interface ParsedQuery {
   select: Array<{ source: string; alias: string }>;
   table: TableSchema;

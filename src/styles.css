@@ -297,6 +297,88 @@ input {
   gap: 12px;
 }
 
+.query-main--with-queue {
+  grid-template-rows: minmax(220px, 40%) auto minmax(240px, 1fr);
+}
+
+.queue-panel {
+  display: flex;
+  min-height: 0;
+  max-height: 168px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(16, 24, 40, .04);
+}
+
+.queue-panel__header {
+  display: flex;
+  height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid #e5e9f0;
+  font-size: 12px;
+}
+
+.queue-panel__header strong {
+  font-size: 12px;
+}
+
+.queue-panel__summary {
+  flex: 1;
+  color: #667085;
+  font-size: 11px;
+}
+
+.queue-panel__list {
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 12px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed #eef1f6;
+  font-size: 12px;
+}
+
+.queue-item:last-child {
+  border-bottom: none;
+}
+
+.queue-item__status {
+  min-width: 52px;
+  margin-inline-end: 0;
+  text-align: center;
+}
+
+.queue-item__sql {
+  max-width: 300px;
+  overflow: hidden;
+  color: #175cd3;
+  font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-item__meta {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #98a2b3;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .editor-panel,
 .result-pane {
   min-height: 0;
@@ -364,6 +446,28 @@ input {
   height: 6px;
   border-radius: 50%;
   background: #34c38f;
+}
+
+.tab-status--running {
+  background: #1769ff;
+  box-shadow: 0 0 0 3px rgba(23, 105, 255, .18);
+}
+
+.tab-status--queued {
+  background: #f79009;
+}
+
+.tab-status--failed {
+  background: #f04438;
+}
+
+.tab-status--cancelled {
+  background: #98a2b3;
+}
+
+.tab-status--stale {
+  background: #f79009;
+  box-shadow: 0 0 0 3px rgba(247, 144, 9, .16);
 }
 
 .add-query-tab {
@@ -446,6 +550,14 @@ kbd {
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.result-table {
+  height: 100%;
+}
+
+.result-table--stale {
+  opacity: .55;
 }
 
 .result-body .ant-table-wrapper,
@@ -632,5 +744,9 @@ kbd {
 
   .query-main {
     grid-template-rows: minmax(300px, 1fr) minmax(270px, 1fr);
+  }
+
+  .query-main--with-queue {
+    grid-template-rows: minmax(260px, 1fr) auto minmax(240px, 1fr);
   }
 }

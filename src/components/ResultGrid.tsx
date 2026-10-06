@@ -1,14 +1,20 @@
-import { CopyOutlined, DownloadOutlined, TableOutlined } from '@ant-design/icons';
-import { App as AntdApp, Button, Empty, Spin, Table, Tag } from 'antd';
+import { CopyOutlined, DownloadOutlined, LockOutlined, TableOutlined, UnlockOutlined } from '@ant-design/icons';
+import { App as AntdApp, Button, Empty, Spin, Table, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { TableProps } from 'antd';
 import { useEffect, useMemo, useState, type ThHTMLAttributes } from 'react';
-import type { QueryResult, SqlValue } from '../types/sql';
+import type { QueryJobStatus, QueryResult, SqlValue } from '../types/sql';
 
 interface ResultGridProps {
   result: QueryResult | null;
-  loading: boolean;
+  status?: QueryJobStatus;
+  queuePosition?: number;
   error: string | null;
+  dataVersion?: number | null;
+  stale?: boolean;
+  locked?: boolean;
+  sqlOutdated?: boolean;
+  onToggleLock?: () => void;
 }
 
 interface ResizableTitleProps extends ThHTMLAttributes<HTMLTableCellElement> {
@@ -50,7 +56,17 @@ function normalizeRow(row: Record<string, SqlValue>): Record<string, SqlValue> {
   return row;
 }
 
-export function ResultGrid({ result, loading, error }: ResultGridProps) {
+export function ResultGrid({
+  result,
+  status,
+  queuePosition = 0,
+  error,
+  dataVersion,
+  stale = false,
+  locked = false,
+  sqlOutdated = false,
+  onToggleLock,
+}: ResultGridProps) {
   const { message } = AntdApp.useApp();
   const [widths, setWidths] = useState<Record<string, number>>({});
 
@@ -170,8 +186,26 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
               <span>· {result.elapsedMs} ms</span>
             </>
           )}
+          {dataVersion != null && <Tag color="geekblue">数据 v{dataVersion}</Tag>}
+          {stale && <Tag color="warning">已过期 · 等待重算结果</Tag>}
+          {locked && result && (
+            <Tag icon={<LockOutlined />} color="blue">
+              已锁定 · 基于 v{dataVersion}
+            </Tag>
+          )}
+          {sqlOutdated && <Tag color="gold">语句已修改</Tag>}
         </div>
         <div>
+          {onToggleLock && (
+            <Tooltip title={locked ? '解除锁定，数据变更后参与重算' : '锁定结果，数据变更后保留此版本'}>
+              <Button
+                type="text"
+                size="small"
+                icon={locked ? <LockOutlined /> : <UnlockOutlined />}
+                onClick={onToggleLock}
+              />
+            </Tooltip>
+          )}
           <Button
             type="text"
             size="small"
@@ -205,23 +239,36 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
         </div>
       </div>
       <div className="result-body">
-        {loading ? (
+        {status === 'running' ? (
           <div className="result-state">
             <Spin size="large" />
             <span>模拟数据源正在执行查询…</span>
+          </div>
+        ) : status === 'queued' ? (
+          <div className="result-state">
+            <Spin size="large" />
+            <span>
+              排队等待执行{queuePosition > 0 ? ` · 前面还有 ${queuePosition} 条` : ''}…
+            </span>
           </div>
         ) : error ? (
           <div className="result-error">
             <strong>查询未能执行</strong>
             <span>{error}</span>
-            <small>错误位置已在编辑器中高亮，可按 Esc 关闭提示后修改 SQL。</small>
+            <small>错误位置已在编辑器中高亮，可在执行队列中重试该条查询。</small>
+          </div>
+        ) : status === 'cancelled' ? (
+          <div className="result-state">
+            <span>查询已取消，可在执行队列中重试</span>
           </div>
         ) : result ? (
-          <Table<Record<string, SqlValue | number>>
-            {...tableProps}
-            columns={columns}
-            dataSource={dataSource}
-          />
+          <div className={stale ? 'result-table result-table--stale' : 'result-table'}>
+            <Table<Record<string, SqlValue | number>>
+              {...tableProps}
+              columns={columns}
+              dataSource={dataSource}
+            />
+          </div>
         ) : (
           <Empty
             className="result-empty"

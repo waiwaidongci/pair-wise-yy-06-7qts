@@ -42,6 +42,8 @@ export interface QuerySession {
   title: string;
   sql: string;
   updatedAt: number;
+  /** 当前标签内结果所基于的数据版本 */
+  dataVersion: number;
 }
 
 export interface QueryHistoryEntry {
@@ -51,7 +53,33 @@ export interface QueryHistoryEntry {
   elapsedMs: number;
   rowCount: number;
   success: boolean;
+  /** 执行时的数据版本 */
+  dataVersion: number;
   error?: string;
+}
+
+export type QueryJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface QueryJob {
+  id: string;
+  sql: string;
+  /** 订阅该任务结果的标签；同一句查询多个标签只执行一次 */
+  tabIds: string[];
+  status: QueryJobStatus;
+  submittedAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  attempts: number;
+  /** 开始执行时捕获的数据版本 */
+  dataVersion: number | null;
+  result: QueryResult | null;
+  error: QueryErrorDetail | null;
+  /** 锁定的结果在数据版本更新后保留，不参与重算 */
+  locked: boolean;
+  /** 数据版本已更新，结果已过期 */
+  stale: boolean;
+  /** 由哪条已过期任务触发的重算 */
+  recomputesJobId?: string;
 }
 
 export interface FavoriteQuery {

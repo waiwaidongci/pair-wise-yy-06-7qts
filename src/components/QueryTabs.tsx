@@ -1,10 +1,11 @@
 import { CloseOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Tabs } from 'antd';
-import type { QuerySession } from '../types/sql';
+import type { QueryJobStatus, QuerySession } from '../types/sql';
 
 interface QueryTabsProps {
   tabs: QuerySession[];
   activeTabId: string;
+  tabStatuses?: Record<string, QueryJobStatus | 'stale'>;
   onActivate: (id: string) => void;
   onAdd: () => void;
   onClose: (id: string) => void;
@@ -13,6 +14,7 @@ interface QueryTabsProps {
 export function QueryTabs({
   tabs,
   activeTabId,
+  tabStatuses,
   onActivate,
   onAdd,
   onClose,
@@ -28,16 +30,19 @@ export function QueryTabs({
         }}
         type="editable-card"
         hideAdd
-        items={tabs.map((tab) => ({
-          key: tab.id,
-          label: (
-            <span className="tab-label">
-              <span className="tab-status" />
-              {tab.title}
-            </span>
-          ),
-          closable: true,
-        }))}
+        items={tabs.map((tab) => {
+          const status = tabStatuses?.[tab.id];
+          return {
+            key: tab.id,
+            label: (
+              <span className="tab-label">
+                <span className={`tab-status${status ? ` tab-status--${status}` : ''}`} />
+                {tab.title}
+              </span>
+            ),
+            closable: true,
+          };
+        })}
       />
       <Button
         type="text"

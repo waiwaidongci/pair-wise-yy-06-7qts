@@ -5,18 +5,20 @@ import {
   HistoryOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, App as AntdApp, Button, Input, Modal, Space, Tooltip } from 'antd';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ExecutionQueuePanel } from '../components/ExecutionQueuePanel';
 import { QueryTabs } from '../components/QueryTabs';
 import { ResultGrid } from '../components/ResultGrid';
 import { SchemaTree } from '../components/SchemaTree';
 import { SqlEditor } from '../components/SqlEditor';
-import { executeMockQuery, getSchema } from '../data/mockDatabase';
+import { getSchema } from '../data/mockDatabase';
+import { useExecutionStore } from '../stores/executionStore';
 import { useWorkbenchStore } from '../stores/workbenchStore';
-import type { QueryErrorDetail, QueryResult } from '../types/sql';
+import type { QueryJobStatus } from '../types/sql';
 import { formatSql } from '../utils/sqlFormatter';
-import { ERROR_MAPPINGS, toQueryErrorDetail } from '../utils/queryErrors';
+import { ERROR_MAPPINGS } from '../utils/queryErrors';
 
 export function WorkbenchPage() {
   const { message } = AntdApp.useApp();
@@ -26,78 +28,73 @@ export function WorkbenchPage() {
   const closeTab = useWorkbenchStore((state) => state.closeTab);
   const activateTab = useWorkbenchStore((state) => state.activateTab);
   const updateTab = useWorkbenchStore((state) => state.updateTab);
-  const addHistory = useWorkbenchStore((state) => state.addHistory);
   const addFavorite = useWorkbenchStore((state) => state.addFavorite);
+  const jobs = useExecutionStore((state) => state.jobs);
+  const tabJobs = useExecutionStore((state) => state.tabJobs);
+  const dataVersion = useExecutionStore((state) => state.dataVersion);
+  const submit = useExecutionStore((state) => state.submit);
+  const cancelJob = useExecutionStore((state) => state.cancelJob);
+  const retryJob = useExecutionStore((state) => state.retryJob);
+  const toggleLock = useExecutionStore((state) => state.toggleLock);
+  const simulateDataChange = useExecutionStore((state) => state.simulateDataChange);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const schemaQuery = useQuery({ queryKey: ['database-schema'], queryFn: getSchema });
-  const abortRef = useRef<AbortController | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [error, setError] = useState<QueryErrorDetail | null>(null);
   const [favoriteOpen, setFavoriteOpen] = useState(false);
   const [favoriteName, setFavoriteName] = useState('');
-  const [lastExecutedSql, setLastExecutedSql] = useState('');
+  const [errorDismissedFor, setErrorDismissedFor] = useState<string | null>(null);
+  const truncatedNotifiedRef = useRef<string | null>(null);
 
-  const executeMutation = useMutation({
-    mutationFn: ({ sql, signal }: { sql: string; signal: AbortSignal }) =>
-      executeMockQuery(sql, signal),
-  });
-
-  const running = executeMutation.isPending;
+  const activeJob = jobs.find((job) => job.id === tabJobs[activeTab?.id ?? '']);
+  const running = activeJob?.status === 'running';
+  const queued = activeJob?.status === 'queued';
+  const result = activeJob?.result ?? null;
+  const error = activeJob?.error ?? null;
   const errorTitle = error ? ERROR_MAPPINGS[error.code]?.title ?? '执行失败' : '';
 
-  const complexity = useMemo(() => {
-    const sql = activeTab?.sql ?? '';
-    return {
-      lines: sql.split('\n').length,
-      chars: sql.length,
-      hasLimit: /\blimit\b/i.test(sql),
-    };
-  }, [activeTab?.sql]);
+  const queuePosition = useMemo(() => {
+    if (!activeJob || activeJob.status !== 'queued') return 0;
+    return jobs.filter(
+      (job) => job.status === 'queued' && job.submittedAt < activeJob.submittedAt,
+    ).length;
+  }, [jobs, activeJob]);
+
+  const tabStatuses = useMemo(() => {
+    const map: Record<string, QueryJobStatus | 'stale'> = {};
+    tabs.forEach((tab) => {
+      const job = jobs.find((item) => item.id === tabJobs[tab.id]);
+      if (!job) return;
+      map[tab.id] = job.status === 'succeeded' && job.stale ? 'stale' : job.status;
+    });
+    return map;
+  }, [tabs, jobs, tabJobs]);
+
+  // 结果对应的是上次执行的语句，编辑器内容之后又改过时给出提示
+  const sqlOutdated = Boolean(
+    activeJob?.result && activeTab && activeJob.sql !== activeTab.sql.trim(),
+  );
+
+  useEffect(() => {
+    if (
+      activeJob?.status === 'succeeded' &&
+      activeJob.result?.truncated &&
+      truncatedNotifiedRef.current !== activeJob.id
+    ) {
+      truncatedNotifiedRef.current = activeJob.id;
+      void message.warning(`结果超过 LIMIT，已返回前 ${activeJob.result.rowCount} 行`);
+    }
+  }, [activeJob, message]);
 
   if (!activeTab) return null;
 
-  const execute = async () => {
-    if (running) return;
-    const sql = activeTab.sql.trim();
-    abortRef.current = new AbortController();
-    setError(null);
-    setResult(null);
-    setLastExecutedSql(sql);
-    try {
-      const nextResult = await executeMutation.mutateAsync({
-        sql,
-        signal: abortRef.current.signal,
-      });
-      setResult(nextResult);
-      addHistory({
-        sql,
-        executedAt: Date.now(),
-        elapsedMs: nextResult.elapsedMs,
-        rowCount: nextResult.rowCount,
-        success: true,
-      });
-      if (nextResult.truncated) {
-        void message.warning(`结果超过 LIMIT，已返回前 ${nextResult.rowCount} 行`);
-      }
-    } catch (queryError) {
-      const detail = toQueryErrorDetail(queryError, sql);
-      setError(detail);
-      addHistory({
-        sql,
-        executedAt: Date.now(),
-        elapsedMs: 0,
-        rowCount: 0,
-        success: false,
-        error: detail.message,
-      });
-    } finally {
-      abortRef.current = null;
-    }
+  const execute = () => {
+    submit(activeTab.id, activeTab.sql);
   };
 
   const cancel = () => {
-    abortRef.current?.abort();
-    void message.info('已发送取消请求');
+    if (activeJob && (activeJob.status === 'queued' || activeJob.status === 'running')) {
+      cancelJob(activeJob.id);
+      void message.info('已发送取消请求');
+    }
   };
 
   const runFormat = () => {
@@ -111,6 +108,11 @@ export function WorkbenchPage() {
     updateTab(activeTab.id, sql, table.name);
   };
 
+  const handleSimulateDataChange = () => {
+    simulateDataChange();
+    void message.warning(`数据源已变更（v${dataVersion + 1}），未锁定的结果将标为过期并重算`);
+  };
+
   return (
     <div className="workbench">
       <SchemaTree
@@ -118,11 +120,12 @@ export function WorkbenchPage() {
         loading={schemaQuery.isLoading}
         onUseTable={useTable}
       />
-      <main className="query-main">
+      <main className={`query-main${jobs.length > 0 ? ' query-main--with-queue' : ''}`}>
         <section className="editor-panel">
           <QueryTabs
             tabs={tabs}
             activeTabId={activeTab.id}
+            tabStatuses={tabStatuses}
             onActivate={activateTab}
             onAdd={() => addTab()}
             onClose={closeTab}
@@ -132,16 +135,16 @@ export function WorkbenchPage() {
               <Button
                 type="primary"
                 icon={<CaretRightOutlined />}
-                loading={running}
-                onClick={() => void execute()}
+                loading={running || queued}
+                onClick={execute}
               >
                 执行
               </Button>
-              <Tooltip title="查询执行中可取消">
+              <Tooltip title="只取消当前标签的查询，不影响队列中其他任务">
                 <Button
                   danger
                   icon={<StopOutlined />}
-                  disabled={!running}
+                  disabled={!running && !queued}
                   onClick={cancel}
                 >
                   取消
@@ -162,22 +165,23 @@ export function WorkbenchPage() {
             </Space>
             <Space size={16} className="editor-meta">
               <span>
-                <HistoryOutlined /> {complexity.lines} 行 / {complexity.chars} 字符
+                <HistoryOutlined /> {activeTab.sql.split('\n').length} 行 / {activeTab.sql.length}{' '}
+                字符
               </span>
-              <span className={complexity.hasLimit ? 'meta-ok' : 'meta-warn'}>
-                {complexity.hasLimit ? '已设置 LIMIT' : '建议设置 LIMIT'}
+              <span className={/\blimit\b/i.test(activeTab.sql) ? 'meta-ok' : 'meta-warn'}>
+                {/\blimit\b/i.test(activeTab.sql) ? '已设置 LIMIT' : '建议设置 LIMIT'}
               </span>
               <kbd>⌘ Enter</kbd>
             </Space>
           </div>
-          {error && (
+          {error && activeJob && errorDismissedFor !== activeJob.id && (
             <Alert
               closable
               showIcon
               type="error"
               message={`${errorTitle} [${error.code}] 第 ${error.line} 行，第 ${error.column} 列`}
               description={`${error.message} ${error.hint}`}
-              onClose={() => setError(null)}
+              onClose={() => setErrorDismissedFor(activeJob.id)}
             />
           )}
           <div className="editor-wrap">
@@ -187,12 +191,35 @@ export function WorkbenchPage() {
               schema={schemaQuery.data}
               error={error}
               onChange={(sql) => updateTab(activeTab.id, sql)}
-              onExecute={() => void execute()}
+              onExecute={execute}
               onFormat={runFormat}
             />
           </div>
         </section>
-        <ResultGrid result={result} loading={running} error={error?.message ?? null} />
+        {jobs.length > 0 && (
+          <ExecutionQueuePanel
+            jobs={jobs}
+            tabs={tabs}
+            dataVersion={dataVersion}
+            onCancel={cancelJob}
+            onRetry={retryJob}
+            onToggleLock={toggleLock}
+            onSimulateDataChange={handleSimulateDataChange}
+          />
+        )}
+        <ResultGrid
+          result={result}
+          status={activeJob?.status}
+          queuePosition={queuePosition}
+          error={error?.message ?? null}
+          dataVersion={activeJob?.dataVersion ?? null}
+          stale={activeJob?.stale ?? false}
+          locked={activeJob?.locked ?? false}
+          sqlOutdated={sqlOutdated}
+          onToggleLock={
+            activeJob?.status === 'succeeded' ? () => toggleLock(activeJob.id) : undefined
+          }
+        />
       </main>
       <Modal
         open={favoriteOpen}
@@ -221,9 +248,9 @@ export function WorkbenchPage() {
           }}
         />
       </Modal>
-      {lastExecutedSql && (
+      {activeJob && (
         <div className="execution-footprint" aria-hidden="true">
-          {lastExecutedSql.slice(0, 80)}
+          {activeJob.sql.slice(0, 80)}
         </div>
       )}
     </div>

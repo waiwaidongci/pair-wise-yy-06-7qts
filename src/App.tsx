@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { Layout, Tag, Tooltip } from 'antd';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useExecutionStore } from './stores/executionStore';
 
 const NAV_ITEMS = [
   { path: '/workbench', label: 'SQL 工作台', icon: <CodeOutlined /> },
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
 export function App() {
   const location = useLocation();
   const current = NAV_ITEMS.find((item) => location.pathname.startsWith(item.path));
+  const dataVersion = useExecutionStore((state) => state.dataVersion);
 
   return (
     <Layout className="app-shell">
@@ -66,6 +68,7 @@ export function App() {
             <span className="header-status__dot" />
             <span>模拟集群运行正常</span>
             <Tag>18,000+ 行订单</Tag>
+            <Tag color="geekblue">数据 v{dataVersion}</Tag>
           </div>
         </Layout.Header>
         <Layout.Content className="app-content">

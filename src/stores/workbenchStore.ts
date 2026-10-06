@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { BASELINE_DATA_VERSION } from '../data/mockDatabase';
 import type { FavoriteQuery, QueryHistoryEntry, QuerySession } from '../types/sql';
 
 const DEFAULT_SQL = `SELECT order_no, customer_name, region, amount, status
@@ -14,6 +15,7 @@ function createSession(title = '查询 1', sql = DEFAULT_SQL): QuerySession {
     title,
     sql,
     updatedAt: Date.now(),
+    dataVersion: BASELINE_DATA_VERSION,
   };
 }
 
@@ -28,11 +30,17 @@ interface WorkbenchState {
   closeTab: (id: string) => void;
   activateTab: (id: string) => void;
   updateTab: (id: string, sql: string, title?: string) => void;
+  setTabDataVersion: (id: string, dataVersion: number) => void;
   addHistory: (entry: Omit<QueryHistoryEntry, 'id'>) => void;
   clearHistory: () => void;
   addFavorite: (name: string, sql: string) => void;
   removeFavorite: (id: string) => void;
 }
+
+type PersistedWorkbench = Pick<
+  WorkbenchState,
+  'tabs' | 'activeTabId' | 'history' | 'favorites'
+>;
 
 export const useWorkbenchStore = create<WorkbenchState>()(
   persist(
@@ -81,6 +89,10 @@ export const useWorkbenchStore = create<WorkbenchState>()(
               : tab,
           ),
         })),
+      setTabDataVersion: (id, dataVersion) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, dataVersion } : tab)),
+        })),
       addHistory: (entry) =>
         set((state) => ({
           history: [{ ...entry, id: crypto.randomUUID() }, ...state.history].slice(0, 100),
@@ -103,12 +115,31 @@ export const useWorkbenchStore = create<WorkbenchState>()(
     }),
     {
       name: 'pair-wise-yy-06-workbench',
-      partialize: (state) => ({
+      version: 1,
+      partialize: (state): PersistedWorkbench => ({
         tabs: state.tabs,
         activeTabId: state.activeTabId,
         history: state.history,
         favorites: state.favorites,
       }),
+      migrate: (persistedState, version): PersistedWorkbench => {
+        const state = persistedState as Partial<PersistedWorkbench> | undefined;
+        if (!version || version < 1) {
+          // 旧数据中的标签和历史没有数据版本，统一补基准版本
+          return {
+            ...state,
+            tabs: (state?.tabs ?? []).map((tab) => ({
+              ...tab,
+              dataVersion: tab.dataVersion ?? BASELINE_DATA_VERSION,
+            })),
+            history: (state?.history ?? []).map((entry) => ({
+              ...entry,
+              dataVersion: entry.dataVersion ?? BASELINE_DATA_VERSION,
+            })),
+          } as PersistedWorkbench;
+        }
+        return state as PersistedWorkbench;
+      },
     },
   ),
 );

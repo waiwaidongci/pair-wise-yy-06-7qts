@@ -72,6 +72,7 @@ export function HistoryPage() {
                       <Tag color={item.success ? 'green' : 'red'} style={{ marginLeft: 10 }}>
                         {item.success ? `${item.rowCount} 行` : '失败'}
                       </Tag>
+                      <Tag color="geekblue">数据 v{item.dataVersion}</Tag>
                       {item.success && <span className="muted-text">{item.elapsedMs} ms</span>}
                     </span>
                   }
