@@ -5,45 +5,59 @@ import {
   HistoryOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, App as AntdApp, Button, Input, Modal, Space, Tooltip } from 'antd';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { QueryQueue } from '../components/QueryQueue';
 import { QueryTabs } from '../components/QueryTabs';
 import { ResultGrid } from '../components/ResultGrid';
 import { SchemaTree } from '../components/SchemaTree';
 import { SqlEditor } from '../components/SqlEditor';
-import { executeMockQuery, getSchema } from '../data/mockDatabase';
+import { getSchema } from '../data/mockDatabase';
 import { useWorkbenchStore } from '../stores/workbenchStore';
-import type { QueryErrorDetail, QueryResult } from '../types/sql';
 import { formatSql } from '../utils/sqlFormatter';
-import { ERROR_MAPPINGS, toQueryErrorDetail } from '../utils/queryErrors';
+import { ERROR_MAPPINGS } from '../utils/queryErrors';
 
 export function WorkbenchPage() {
   const { message } = AntdApp.useApp();
   const tabs = useWorkbenchStore((state) => state.tabs);
   const activeTabId = useWorkbenchStore((state) => state.activeTabId);
+  const dataVersion = useWorkbenchStore((state) => state.dataVersion);
+  const jobs = useWorkbenchStore((state) => state.jobs);
   const addTab = useWorkbenchStore((state) => state.addTab);
   const closeTab = useWorkbenchStore((state) => state.closeTab);
   const activateTab = useWorkbenchStore((state) => state.activateTab);
   const updateTab = useWorkbenchStore((state) => state.updateTab);
-  const addHistory = useWorkbenchStore((state) => state.addHistory);
+  const submitQuery = useWorkbenchStore((state) => state.submitQuery);
+  const cancelJob = useWorkbenchStore((state) => state.cancelJob);
+  const retryJob = useWorkbenchStore((state) => state.retryJob);
+  const dismissJob = useWorkbenchStore((state) => state.dismissJob);
+  const clearFinishedJobs = useWorkbenchStore((state) => state.clearFinishedJobs);
+  const lockResult = useWorkbenchStore((state) => state.lockResult);
+  const unlockResult = useWorkbenchStore((state) => state.unlockResult);
+  const recomputeTab = useWorkbenchStore((state) => state.recomputeTab);
+  const bumpDataVersion = useWorkbenchStore((state) => state.bumpDataVersion);
   const addFavorite = useWorkbenchStore((state) => state.addFavorite);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const schemaQuery = useQuery({ queryKey: ['database-schema'], queryFn: getSchema });
-  const abortRef = useRef<AbortController | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [error, setError] = useState<QueryErrorDetail | null>(null);
   const [favoriteOpen, setFavoriteOpen] = useState(false);
   const [favoriteName, setFavoriteName] = useState('');
-  const [lastExecutedSql, setLastExecutedSql] = useState('');
 
-  const executeMutation = useMutation({
-    mutationFn: ({ sql, signal }: { sql: string; signal: AbortSignal }) =>
-      executeMockQuery(sql, signal),
-  });
+  // 当前标签关联的任务
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => job.tabIds.includes(activeTab?.id ?? '')),
+    [jobs, activeTab?.id],
+  );
+  const activeRunningJob = activeJobs.find(
+    (job) => job.status === 'queued' || job.status === 'running',
+  );
+  const activeErrorJob = [...activeJobs]
+    .reverse()
+    .find((job) => job.status === 'failed' && job.errorDetail);
 
-  const running = executeMutation.isPending;
-  const errorTitle = error ? ERROR_MAPPINGS[error.code]?.title ?? '执行失败' : '';
+  const running = Boolean(activeRunningJob);
+  const errorDetail = activeErrorJob?.errorDetail ?? null;
+  const errorTitle = errorDetail ? ERROR_MAPPINGS[errorDetail.code]?.title ?? '执行失败' : '';
 
   const complexity = useMemo(() => {
     const sql = activeTab?.sql ?? '';
@@ -56,48 +70,15 @@ export function WorkbenchPage() {
 
   if (!activeTab) return null;
 
-  const execute = async () => {
-    if (running) return;
-    const sql = activeTab.sql.trim();
-    abortRef.current = new AbortController();
-    setError(null);
-    setResult(null);
-    setLastExecutedSql(sql);
-    try {
-      const nextResult = await executeMutation.mutateAsync({
-        sql,
-        signal: abortRef.current.signal,
-      });
-      setResult(nextResult);
-      addHistory({
-        sql,
-        executedAt: Date.now(),
-        elapsedMs: nextResult.elapsedMs,
-        rowCount: nextResult.rowCount,
-        success: true,
-      });
-      if (nextResult.truncated) {
-        void message.warning(`结果超过 LIMIT，已返回前 ${nextResult.rowCount} 行`);
-      }
-    } catch (queryError) {
-      const detail = toQueryErrorDetail(queryError, sql);
-      setError(detail);
-      addHistory({
-        sql,
-        executedAt: Date.now(),
-        elapsedMs: 0,
-        rowCount: 0,
-        success: false,
-        error: detail.message,
-      });
-    } finally {
-      abortRef.current = null;
-    }
+  const execute = () => {
+    submitQuery(activeTab.id, activeTab.sql);
   };
 
   const cancel = () => {
-    abortRef.current?.abort();
-    void message.info('已发送取消请求');
+    if (activeRunningJob) {
+      cancelJob(activeRunningJob.id);
+      void message.info('已发送取消请求');
+    }
   };
 
   const runFormat = () => {
@@ -111,12 +92,17 @@ export function WorkbenchPage() {
     updateTab(activeTab.id, sql, table.name);
   };
 
+  const sqlChanged = Boolean(
+    activeTab.result && activeTab.result.data.sql.trim() !== activeTab.sql.trim(),
+  );
+
   return (
     <div className="workbench">
       <SchemaTree
         schema={schemaQuery.data}
         loading={schemaQuery.isLoading}
         onUseTable={useTable}
+        onRefreshData={bumpDataVersion}
       />
       <main className="query-main">
         <section className="editor-panel">
@@ -129,21 +115,18 @@ export function WorkbenchPage() {
           />
           <div className="editor-toolbar">
             <Space size={6}>
-              <Button
-                type="primary"
-                icon={<CaretRightOutlined />}
-                loading={running}
-                onClick={() => void execute()}
-              >
-                执行
-              </Button>
-              <Tooltip title="查询执行中可取消">
+              <Tooltip title="最多同时执行 2 条，其余排队；同一句 SQL 多标签同时提交只算一次">
                 <Button
-                  danger
-                  icon={<StopOutlined />}
-                  disabled={!running}
-                  onClick={cancel}
+                  type="primary"
+                  icon={<CaretRightOutlined />}
+                  loading={running}
+                  onClick={execute}
                 >
+                  执行
+                </Button>
+              </Tooltip>
+              <Tooltip title="取消当前标签的执行任务，不影响队列中其他任务">
+                <Button danger icon={<StopOutlined />} disabled={!running} onClick={cancel}>
                   取消
                 </Button>
               </Tooltip>
@@ -170,14 +153,16 @@ export function WorkbenchPage() {
               <kbd>⌘ Enter</kbd>
             </Space>
           </div>
-          {error && (
+          {errorDetail && (
             <Alert
               closable
               showIcon
               type="error"
-              message={`${errorTitle} [${error.code}] 第 ${error.line} 行，第 ${error.column} 列`}
-              description={`${error.message} ${error.hint}`}
-              onClose={() => setError(null)}
+              message={`${errorTitle} [${errorDetail.code}] 第 ${errorDetail.line} 行，第 ${errorDetail.column} 列`}
+              description={`${errorDetail.message} ${errorDetail.hint}`}
+              onClose={() => {
+                if (activeErrorJob) dismissJob(activeErrorJob.id);
+              }}
             />
           )}
           <div className="editor-wrap">
@@ -185,14 +170,33 @@ export function WorkbenchPage() {
               key={activeTab.id}
               value={activeTab.sql}
               schema={schemaQuery.data}
-              error={error}
+              error={errorDetail}
               onChange={(sql) => updateTab(activeTab.id, sql)}
-              onExecute={() => void execute()}
+              onExecute={execute}
               onFormat={runFormat}
             />
           </div>
         </section>
-        <ResultGrid result={result} loading={running} error={error?.message ?? null} />
+        <ResultGrid
+          tabResult={activeTab.result ?? null}
+          currentVersion={dataVersion}
+          loading={running}
+          error={errorDetail?.message ?? null}
+          sqlChanged={sqlChanged}
+          onToggleLock={() =>
+            activeTab.result?.status === 'locked'
+              ? unlockResult(activeTab.id)
+              : lockResult(activeTab.id)
+          }
+          onRecompute={() => recomputeTab(activeTab.id)}
+        />
+        <QueryQueue
+          jobs={jobs}
+          onCancel={cancelJob}
+          onRetry={retryJob}
+          onDismiss={dismissJob}
+          onClearFinished={clearFinishedJobs}
+        />
       </main>
       <Modal
         open={favoriteOpen}
@@ -221,11 +225,6 @@ export function WorkbenchPage() {
           }}
         />
       </Modal>
-      {lastExecutedSql && (
-        <div className="execution-footprint" aria-hidden="true">
-          {lastExecutedSql.slice(0, 80)}
-        </div>
-      )}
     </div>
   );
 }

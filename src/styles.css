@@ -293,7 +293,7 @@ input {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: minmax(270px, 48%) minmax(260px, 1fr);
+  grid-template-rows: minmax(240px, 46%) minmax(240px, 1fr) auto;
   gap: 12px;
 }
 
@@ -530,6 +530,150 @@ kbd {
 
 .execution-footprint {
   display: none;
+}
+
+.pane-heading__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.result-stale-alert {
+  margin: 8px 12px 0;
+  align-items: center;
+}
+
+.result-stale-alert .ant-alert-action {
+  margin-inline-start: 8px;
+}
+
+.result-table--dimmed {
+  opacity: .55;
+  transition: opacity .2s ease;
+}
+
+/* 执行队列 */
+.query-queue {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(16, 24, 40, .04);
+  overflow: hidden;
+}
+
+.query-queue__bar {
+  display: flex;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.query-queue__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.query-queue__counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.query-queue__toggle {
+  margin-inline-start: auto;
+  color: #667085;
+  font-size: 12px;
+}
+
+.query-queue__panel {
+  min-height: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid #e5e9f0;
+}
+
+.query-queue__empty {
+  padding: 16px 0;
+}
+
+.query-queue__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.query-queue__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.query-queue__item:hover {
+  background: #f7f9fc;
+}
+
+.query-queue__status {
+  flex: 0 0 auto;
+}
+
+.query-queue__sql {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #344054;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.query-queue__meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: #667085;
+}
+
+.query-queue__error {
+  max-width: 180px;
+  overflow: hidden;
+  color: #b42318;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.query-queue__time {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.query-queue__actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.query-queue__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 8px;
 }
 
 .content-page {

@@ -1,5 +1,5 @@
-import { DatabaseOutlined, FieldBinaryOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
-import { Empty, Input, Spin, Tree, Typography, type TreeDataNode } from 'antd';
+import { DatabaseOutlined, FieldBinaryOutlined, ReloadOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { Button, Empty, Input, Spin, Tooltip, Tree, Typography, type TreeDataNode } from 'antd';
 import { useMemo, useState } from 'react';
 import type { DatabaseSchema } from '../types/sql';
 
@@ -7,9 +7,10 @@ interface SchemaTreeProps {
   schema?: DatabaseSchema;
   loading: boolean;
   onUseTable: (tableName: string) => void;
+  onRefreshData: () => void;
 }
 
-export function SchemaTree({ schema, loading, onUseTable }: SchemaTreeProps) {
+export function SchemaTree({ schema, loading, onUseTable, onRefreshData }: SchemaTreeProps) {
   const [search, setSearch] = useState('');
   const treeData = useMemo<TreeDataNode[]>(() => {
     if (!schema) return [];
@@ -50,7 +51,17 @@ export function SchemaTree({ schema, loading, onUseTable }: SchemaTreeProps) {
           <Typography.Text strong>数据资源</Typography.Text>
           <Typography.Text type="secondary"> commerce_dw</Typography.Text>
         </div>
-        <span className="online-dot" title="模拟数据源在线" />
+        <span className="pane-heading__actions">
+          <Tooltip title="刷新数据版本，未锁定的过期结果将自动重算">
+            <Button
+              type="text"
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={onRefreshData}
+            />
+          </Tooltip>
+          <span className="online-dot" title="模拟数据源在线" />
+        </span>
       </div>
       <Input
         allowClear

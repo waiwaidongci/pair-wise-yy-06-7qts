@@ -1,14 +1,26 @@
-import { CopyOutlined, DownloadOutlined, TableOutlined } from '@ant-design/icons';
-import { App as AntdApp, Button, Empty, Spin, Table, Tag } from 'antd';
+import {
+  CopyOutlined,
+  DownloadOutlined,
+  LockOutlined,
+  ReloadOutlined,
+  TableOutlined,
+  UnlockOutlined,
+} from '@ant-design/icons';
+import { App as AntdApp, Alert, Button, Empty, Spin, Table, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { TableProps } from 'antd';
 import { useEffect, useMemo, useState, type ThHTMLAttributes } from 'react';
-import type { QueryResult, SqlValue } from '../types/sql';
+import type { ResultStatus, SqlValue, TabResult } from '../types/sql';
 
 interface ResultGridProps {
-  result: QueryResult | null;
+  tabResult: TabResult | null;
+  currentVersion: number;
   loading: boolean;
   error: string | null;
+  /** 当前编辑器 SQL 与结果所用 SQL 不一致（改了语句未重跑） */
+  sqlChanged: boolean;
+  onToggleLock: () => void;
+  onRecompute: () => void;
 }
 
 interface ResizableTitleProps extends ThHTMLAttributes<HTMLTableCellElement> {
@@ -50,9 +62,27 @@ function normalizeRow(row: Record<string, SqlValue>): Record<string, SqlValue> {
   return row;
 }
 
-export function ResultGrid({ result, loading, error }: ResultGridProps) {
+const STATUS_META: Record<ResultStatus, { color: string; text: string }> = {
+  fresh: { color: 'green', text: '最新' },
+  stale: { color: 'orange', text: '已过期' },
+  locked: { color: 'blue', text: '已锁定' },
+};
+
+export function ResultGrid({
+  tabResult,
+  currentVersion,
+  loading,
+  error,
+  sqlChanged,
+  onToggleLock,
+  onRecompute,
+}: ResultGridProps) {
   const { message } = AntdApp.useApp();
   const [widths, setWidths] = useState<Record<string, number>>({});
+
+  const result = tabResult?.data ?? null;
+  const status = tabResult?.status ?? null;
+  const dataVersion = tabResult?.dataVersion ?? null;
 
   useEffect(() => {
     if (!result) return;
@@ -124,7 +154,7 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
         .map((column) => `"${String(row[column.name] ?? '').replaceAll('"', '""')}"`)
         .join(','),
     );
-    const blob = new Blob([`\uFEFF${[header, ...rows].join('\n')}`], {
+    const blob = new Blob([`﻿${[header, ...rows].join('\n')}`], {
       type: 'text/csv;charset=utf-8',
     });
     const link = document.createElement('a');
@@ -155,12 +185,25 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
     },
   };
 
+  const stale = status === 'stale';
+  const locked = status === 'locked';
+
   return (
     <section className="result-pane">
       <div className="result-heading">
         <div className="result-heading__title">
           <TableOutlined />
           <strong>查询结果</strong>
+          {result && status && (
+            <Tag color={STATUS_META[status].color}>{STATUS_META[status].text}</Tag>
+          )}
+          {result && dataVersion !== null && (
+            <Tooltip title={locked ? '结果已锁定，不会随数据版本更新重算' : '结果执行时的数据版本'}>
+              <Tag color={dataVersion >= currentVersion ? 'default' : 'warning'}>
+                基于 v{dataVersion}
+              </Tag>
+            </Tooltip>
+          )}
           {result && (
             <>
               <Tag color={result.truncated ? 'orange' : 'green'}>
@@ -172,6 +215,27 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
           )}
         </div>
         <div>
+          <Tooltip title={locked ? '解锁后，数据版本更新将自动重算' : '锁定当前结果，版本更新后保留不重算'}>
+            <Button
+              type="text"
+              size="small"
+              icon={locked ? <LockOutlined /> : <UnlockOutlined />}
+              disabled={!result}
+              onClick={onToggleLock}
+            >
+              {locked ? '已锁定' : '锁定'}
+            </Button>
+          </Tooltip>
+          <Button
+            type="text"
+            size="small"
+            icon={<ReloadOutlined />}
+            disabled={!result || loading || locked}
+            title={locked ? '结果已锁定，请先解锁再重算' : '按当前 SQL 重新执行'}
+            onClick={onRecompute}
+          >
+            重算
+          </Button>
           <Button
             type="text"
             size="small"
@@ -205,7 +269,7 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
         </div>
       </div>
       <div className="result-body">
-        {loading ? (
+        {loading && !result ? (
           <div className="result-state">
             <Spin size="large" />
             <span>模拟数据源正在执行查询…</span>
@@ -217,11 +281,36 @@ export function ResultGrid({ result, loading, error }: ResultGridProps) {
             <small>错误位置已在编辑器中高亮，可按 Esc 关闭提示后修改 SQL。</small>
           </div>
         ) : result ? (
-          <Table<Record<string, SqlValue | number>>
-            {...tableProps}
-            columns={columns}
-            dataSource={dataSource}
-          />
+          <>
+            {stale && (
+              <Alert
+                className="result-stale-alert"
+                showIcon
+                type="warning"
+                message={`结果已过期：基于数据版本 v${dataVersion}，当前为 v${currentVersion}，正在自动重算…`}
+              />
+            )}
+            {sqlChanged && !stale && (
+              <Alert
+                className="result-stale-alert"
+                showIcon
+                type="info"
+                message="SQL 已修改，当前结果基于上次执行的语句"
+                action={
+                  <Button size="small" type="link" onClick={onRecompute}>
+                    重新执行
+                  </Button>
+                }
+              />
+            )}
+            <div className={stale || loading ? 'result-table--dimmed' : undefined}>
+              <Table<Record<string, SqlValue | number>>
+                {...tableProps}
+                columns={columns}
+                dataSource={dataSource}
+              />
+            </div>
+          </>
         ) : (
           <Empty
             className="result-empty"
