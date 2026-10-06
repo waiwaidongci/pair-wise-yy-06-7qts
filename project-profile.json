@@ -1,0 +1,11 @@
+{
+  "projectId": "pair-wise-yy-06",
+  "projectName": "Nebula SQL 查询工作台",
+  "category": "数据库工具",
+  "businessDomain": "研发工具",
+  "projectForm": "完整项目",
+  "codeScope": "frontend",
+  "languages": "React, TypeScript, Monaco, Ant Design, Zustand, TanStack Query, Vite",
+  "summary": "浏览器 SQL 工作台，包含结构树、多标签编辑器、自动补全、虚拟结果表、查询历史与收藏。",
+  "containerized": false
+}
